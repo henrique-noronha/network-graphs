@@ -1,57 +1,88 @@
+"""Script de experimentação para medição do efeito da representação computacional."""
+
 import random
+import statistics
 import time
-import tracemalloc
 from src.grafo import GrafoMatriz, GrafoLista
 from src.algoritmos import contar_triangulos
 
+SEMENTE = 42
 
-def gerar_grafo_aleatorio(cls_grafo, n: int, p: float):
-    """Gera um grafo aleatório G(n, p) inserindo arestas com probabilidade p."""
-    g = cls_grafo(n)
+
+def gerar_arestas_aleatorias(n: int, p: float, semente: int):
+    """
+    Gera a lista de arestas aleatórias para um grafo G(n, p) com probabilidade p.
+    Percorre apenas os pares com u < v e usa uma semente fixa para garantir reprodutibilidade.
+    """
+    random.seed(semente)
+    arestas = []
     for u in range(n):
         for v in range(u + 1, n):
             if random.random() < p:
-                g.adicionar_aresta(u, v)
+                arestas.append((u, v))
+    return arestas
+
+
+def construir_grafo(cls_grafo, n: int, arestas):
+    """Constrói uma instância de grafo populando com a mesma lista de arestas."""
+    g = cls_grafo(n)
+    for u, v in arestas:
+        g.adicionar_aresta(u, v)
     return g
 
 
-def medir_desempenho(cls_grafo, n: int, p: float):
-    """Mede o tempo da contagem de triângulos e o pico de consumo de memória RAM."""
-    # 1. Medição de Memória RAM na construção
-    tracemalloc.start()
-    g = gerar_grafo_aleatorio(cls_grafo, n, p)
-    _, mem_pico = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    mem_mb = mem_pico / (1024 * 1024)
-
-    # 2. Medição do Tempo do Algoritmo
-    inicio = time.perf_counter()
-    qtd_triangulos = contar_triangulos(g)
-    fim = time.perf_counter()
-    tempo_execucao = fim - inicio
-
-    return g.m, qtd_triangulos, tempo_execucao, mem_mb
+def medir_tempo_mediana(g, repeticoes: int = 3):
+    """Executa contar_triangulos pelo menos 3 vezes e reporta a mediana dos tempos."""
+    tempos = []
+    qtd_triangulos = 0
+    for _ in range(repeticoes):
+        inicio = time.perf_counter()
+        qtd_triangulos = contar_triangulos(g)
+        fim = time.perf_counter()
+        tempos.append(fim - inicio)
+    return statistics.median(tempos), qtd_triangulos
 
 
-def executar_experimento():
+def calcular_espaco(nome_impl: str, n: int, m: int) -> int:
+    """
+    Calcula a quantidade de posições ocupadas pela estrutura de dados:
+    - n^2 na matriz de adjacência
+    - n + 2m na lista de adjacência
+    """
+    if "Matriz" in nome_impl:
+        return n * n
+    return n + 2 * m
+
+
+def executar_experimento(repeticoes: int = 3):
     n = 2000
     densidades = [0.001, 0.05, 0.5]
 
-    print("=" * 90)
-    print(f" EXPERIMENTO DE DESEMPENHO (n = {n})")
-    print("=" * 90)
-    header = f"{'Densidade (p)':<15} | {'Representação':<15} | {'Arestas (m)':<12} | {'Triângulos':<12} | {'Tempo (s)':<10} | {'Memória (MB)':<12}"
+    print("=" * 96)
+    print(f" EXPERIMENTO: MEDIR O EFEITO DA REPRESENTAÇÃO (n = {n}, Semente = {SEMENTE}, Repetições = {repeticoes})")
+    print("=" * 96)
+    header = f"{'Densidade (p)':<15} | {'m obtido':<10} | {'Implementação':<15} | {'Tempo mediano (s)':<18} | {'Espaço (posições)':<18} | {'Triângulos':<12}"
     print(header)
-    print("-" * 90)
+    print("-" * 96)
 
+    resultados = []
     for p in densidades:
-        for nome, cls in [("Matriz", GrafoMatriz), ("Lista", GrafoLista)]:
-            print(f"A processar p={p} ({nome})...", end="\r")
-            m, tri, tempo, mem = medir_desempenho(cls, n, p)
-            print(f"{p:<15} | {nome:<15} | {m:<12} | {tri:<12} | {tempo:<10.4f} | {mem:<12.2f}")
+        arestas = gerar_arestas_aleatorias(n, p, SEMENTE)
+        m_obtido = len(arestas)
 
-    print("=" * 90)
+        for nome, cls in [("GrafoMatriz", GrafoMatriz), ("GrafoLista", GrafoLista)]:
+            print(f"Processando p={p} ({nome})...", end="\r", flush=True)
+            g = construir_grafo(cls, n, arestas)
+            tempo_med, tri = medir_tempo_mediana(g, repeticoes=repeticoes)
+            espaco = calcular_espaco(nome, n, m_obtido)
+
+            linha = f"{p:<15} | {m_obtido:<10} | {nome:<15} | {tempo_med:<18.4f} | {espaco:<18} | {tri:<12}"
+            print(linha)
+            resultados.append((p, m_obtido, nome, tempo_med, espaco, tri))
+
+    print("=" * 96)
+    return resultados
 
 
 if __name__ == "__main__":
-    executar_experimento()
+    executar_experimento(repeticoes=3)

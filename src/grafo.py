@@ -6,6 +6,18 @@ class Grafo(ABC):
         self.n = n
         self.m = 0
 
+    def ordem(self) -> int:
+        return self.n
+
+    def tamanho(self) -> int:
+        return self.m
+
+    def vertices(self):
+        return range(self.n)
+
+    def inserir_aresta(self, u: int, v: int) -> None:
+        self.adicionar_aresta(u, v)
+
     @abstractmethod
     def adicionar_aresta(self, u: int, v: int) -> None:
         pass
